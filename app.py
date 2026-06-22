@@ -3,11 +3,19 @@ YouTube Q&A RAG Application — Main Streamlit App.
 
 A Retrieval-Augmented Generation application that lets users ask questions
 about YouTube video content using transcript-based semantic search and LLM generation.
+
+Deployment-ready for Streamlit Cloud, HuggingFace Spaces, and local development.
 """
 
 import os
 import streamlit as st
-from dotenv import load_dotenv
+
+# dotenv is optional — not needed on Streamlit Cloud / HF Spaces
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 from config import (
     APP_TITLE,
@@ -31,8 +39,28 @@ from ui_components import (
     render_divider,
 )
 
-# Load environment variables
-load_dotenv()
+
+def get_hf_token():
+    """
+    Retrieve HuggingFace API token with priority:
+    1. Streamlit Cloud secrets  (st.secrets)
+    2. Environment variable     (.env / system env)
+    3. Empty string             (user enters in sidebar)
+    """
+    # Priority 1: Streamlit Cloud secrets
+    try:
+        token = st.secrets.get("HUGGINGFACEHUB_API_TOKEN", "")
+        if token:
+            return token
+    except (FileNotFoundError, AttributeError):
+        pass
+
+    # Priority 2: Environment variable (local .env or system)
+    token = os.getenv("HUGGINGFACEHUB_API_TOKEN", "")
+    if token:
+        return token
+
+    return ""
 
 # ─── Page Configuration ────────────────────────────────────────────────────────
 
@@ -57,7 +85,7 @@ def init_session_state():
         "video_processed": False,
         "video_stats": {},
         "processing": False,
-        "hf_token": os.getenv("HUGGINGFACEHUB_API_TOKEN", ""),
+        "hf_token": get_hf_token(),
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -109,7 +137,7 @@ def render_sidebar():
             st.session_state.hf_token = hf_token
 
         if not hf_token:
-            st.warning("⚠️ Enter your HF token to enable Q&A", icon="🔑")
+            st.warning("⚠️ Enter your HF token to enable Q&A. On Streamlit Cloud, add it in Settings → Secrets.", icon="🔑")
 
         render_divider()
 
