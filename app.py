@@ -147,6 +147,11 @@ def render_sidebar():
             unsafe_allow_html=True,
         )
 
+        # Pre-seed widget state if a sample video was selected
+        # (This works because the widget hasn't rendered yet at this point)
+        if "_youtube_url_pending" in st.session_state:
+            st.session_state["youtube_url_input"] = st.session_state.pop("_youtube_url_pending")
+
         youtube_url = st.text_input(
             "YouTube Video URL",
             placeholder="https://www.youtube.com/watch?v=...",
@@ -165,7 +170,7 @@ def render_sidebar():
                 key=f"sample_{sample['url']}",
                 use_container_width=True,
             ):
-                st.session_state["youtube_url_input"] = sample["url"]
+                st.session_state["_youtube_url_pending"] = sample["url"]
                 st.rerun()
 
         st.markdown("<br>", unsafe_allow_html=True)
@@ -205,8 +210,11 @@ def render_sidebar():
         elif st.session_state.processing:
             render_status_badge("processing")
         else:
-            render_status_badge("idle")
-            st.caption("No video processed yet")
+            if "process_error" in st.session_state:
+                st.error(f"❌ {st.session_state['process_error']}")
+            else:
+                render_status_badge("idle")
+                st.caption("No video processed yet")
 
         render_divider()
 
@@ -245,6 +253,7 @@ def process_video(youtube_url: str):
     st.session_state.processing = True
     st.session_state.video_processed = False
     st.session_state.chat_history = []
+    st.session_state.pop("process_error", None)
 
     pipeline = RAGPipeline()
     st.session_state.pipeline = pipeline
@@ -259,14 +268,16 @@ def process_video(youtube_url: str):
             unsafe_allow_html=True,
         )
 
-    result = pipeline.process_video(youtube_url, progress_callback)
+    try:
+        result = pipeline.process_video(youtube_url, progress_callback)
 
-    if result["success"]:
-        st.session_state.video_processed = True
-        st.session_state.video_stats = result["stats"]
-        status_text.success("✅ Video processed successfully!")
-    else:
-        status_text.error(f"❌ {result['error']}")
+        if result["success"]:
+            st.session_state.video_processed = True
+            st.session_state.video_stats = result["stats"]
+        else:
+            st.session_state["process_error"] = result["error"]
+    except Exception as e:
+        st.session_state["process_error"] = f"Unexpected error: {e}"
 
     st.session_state.processing = False
     progress_bar.empty()

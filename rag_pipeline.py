@@ -25,7 +25,8 @@ from config import (
     LLM_MAX_NEW_TOKENS,
     LLM_TEMPERATURE,
     LLM_REPETITION_PENALTY,
-    RAG_PROMPT_TEMPLATE,
+    SYSTEM_PROMPT,
+    USER_PROMPT_TEMPLATE,
 )
 
 logger = logging.getLogger(__name__)
@@ -238,22 +239,23 @@ def generate_answer(query: str, context_chunks: list, hf_token: str) -> dict:
 
     context = "\n\n".join(context_parts)
 
-    # Format the prompt
-    prompt = RAG_PROMPT_TEMPLATE.format(context=context, question=query)
+    # Format the user message
+    user_message = USER_PROMPT_TEMPLATE.format(context=context, question=query)
 
     try:
         client = InferenceClient(token=hf_token)
-        response = client.text_generation(
-            prompt,
+        response = client.chat_completion(
             model=LLM_MODEL_NAME,
-            max_new_tokens=LLM_MAX_NEW_TOKENS,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_message},
+            ],
+            max_tokens=LLM_MAX_NEW_TOKENS,
             temperature=LLM_TEMPERATURE,
-            repetition_penalty=LLM_REPETITION_PENALTY,
-            do_sample=True,
         )
 
-        # Clean up the response
-        answer = response.strip()
+        # Extract the answer from the chat completion response
+        answer = response.choices[0].message.content.strip()
 
         return {
             "answer": answer,

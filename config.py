@@ -19,21 +19,19 @@ CHUNK_OVERLAP = 200
 # ─── Retrieval ──────────────────────────────────────────────────────────────────
 RETRIEVAL_K = 4  # Number of chunks to retrieve
 
-# ─── RAG Prompt Template ───────────────────────────────────────────────────────
-RAG_PROMPT_TEMPLATE = """<s>[INST] You are a helpful AI assistant that answers questions based on YouTube video transcripts.
+# ─── RAG Prompt Template (chat_completion format) ──────────────────────────────
+SYSTEM_PROMPT = """You are a helpful AI assistant that answers questions based on YouTube video transcripts.
 
-Use ONLY the following context from the video transcript to answer the question. Follow these rules strictly:
+Follow these rules strictly:
 1. Answer based ONLY on the provided context. Do not use outside knowledge.
 2. If the context does not contain enough information to answer, say "I couldn't find enough information in this video to answer that question."
 3. Be concise but thorough. Use bullet points for multi-part answers.
-4. When relevant, mention which part of the discussion your answer comes from.
+4. When relevant, mention which part of the discussion your answer comes from."""
 
-CONTEXT FROM VIDEO TRANSCRIPT:
+USER_PROMPT_TEMPLATE = """CONTEXT FROM VIDEO TRANSCRIPT:
 {context}
 
-QUESTION: {question}
-
-ANSWER: [/INST]"""
+QUESTION: {question}"""
 
 # ─── UI Constants ──────────────────────────────────────────────────────────────
 APP_TITLE = "YouTube Q&A RAG"

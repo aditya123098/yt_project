@@ -12,7 +12,7 @@ sentence-transformers>=2.2.0
 faiss-cpu>=1.7.4
 
 # ─── YouTube Transcript ─────────────────────────
-youtube-transcript-api>=0.6.1
+youtube-transcript-api>=1.0.0
 
 # ─── HuggingFace Inference API ──────────────────
 huggingface-hub>=0.20.0
