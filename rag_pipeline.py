@@ -6,6 +6,7 @@ FAISS vector store creation, and LLM-based answer generation.
 """
 
 import re
+import time
 import logging
 from typing import Optional
 
@@ -48,11 +49,13 @@ def extract_video_id(url: str) -> Optional[str]:
     return None
 
 
-def extract_transcript(youtube_url: str) -> dict:
+def extract_transcript(youtube_url: str, max_retries: int = 3) -> dict:
     """
     Extract transcript from a YouTube video using youtube-transcript-api v1.2+.
 
     Uses the new instance-based API (static methods were removed in v1.2).
+    Retries with exponential backoff on transient errors (e.g. YouTube blocking
+    requests from cloud datacenter IPs).
 
     Returns:
         dict with keys: 'text', 'video_id', 'segments', 'success', 'error'
@@ -67,68 +70,103 @@ def extract_transcript(youtube_url: str) -> dict:
             "error": "Invalid YouTube URL. Please provide a valid YouTube video link.",
         }
 
-    try:
-        # v1.2+: Use instance-based API
-        ytt_api = YouTubeTranscriptApi()
-        transcript = ytt_api.fetch(video_id)
+    last_exception = None
 
-        # Build full text from transcript snippets
-        # In v1.2+, transcript is a FetchedTranscript object that is iterable
-        segments_list = []
-        text_parts = []
-        for snippet in transcript:
-            # Each snippet has .text, .start, .duration attributes
-            text = snippet.text if hasattr(snippet, 'text') else str(snippet)
-            text_parts.append(text)
-            segments_list.append({
-                "text": text,
-                "start": getattr(snippet, 'start', 0),
-                "duration": getattr(snippet, 'duration', 0),
-            })
+    for attempt in range(max_retries):
+        try:
+            # v1.2+: Use instance-based API
+            ytt_api = YouTubeTranscriptApi()
+            transcript = ytt_api.fetch(video_id)
 
-        full_text = " ".join(text_parts)
+            # Build full text from transcript snippets
+            # In v1.2+, transcript is a FetchedTranscript object that is iterable
+            segments_list = []
+            text_parts = []
+            for snippet in transcript:
+                # Each snippet has .text, .start, .duration attributes
+                text = snippet.text if hasattr(snippet, 'text') else str(snippet)
+                text_parts.append(text)
+                segments_list.append({
+                    "text": text,
+                    "start": getattr(snippet, 'start', 0),
+                    "duration": getattr(snippet, 'duration', 0),
+                })
 
-        # Clean up the text
-        full_text = re.sub(r"\s+", " ", full_text).strip()
-        full_text = re.sub(r"\[.*?\]", "", full_text)  # Remove [Music], [Applause], etc.
+            full_text = " ".join(text_parts)
 
-        if not full_text.strip():
+            # Clean up the text
+            full_text = re.sub(r"\s+", " ", full_text).strip()
+            full_text = re.sub(r"\[.*?\]", "", full_text)  # Remove [Music], [Applause], etc.
+
+            if not full_text.strip():
+                return {
+                    "text": "",
+                    "video_id": video_id,
+                    "segments": [],
+                    "success": False,
+                    "error": "Transcript is empty for this video.",
+                }
+
             return {
-                "text": "",
+                "text": full_text,
                 "video_id": video_id,
-                "segments": [],
-                "success": False,
-                "error": "Transcript is empty for this video.",
+                "segments": segments_list,
+                "success": True,
+                "error": None,
             }
 
-        return {
-            "text": full_text,
-            "video_id": video_id,
-            "segments": segments_list,
-            "success": True,
-            "error": None,
-        }
+        except Exception as e:
+            last_exception = e
+            error_msg = str(e).lower()
 
-    except Exception as e:
-        error_msg = str(e).lower()
-        if "disabled" in error_msg:
-            friendly_error = "Transcripts are disabled for this video."
-        elif "unavailable" in error_msg or "not exist" in error_msg:
-            friendly_error = "This video is unavailable or does not exist."
-        elif "no transcript" in error_msg:
-            friendly_error = "No transcript found for this video. It may not have captions."
-        elif "blocked" in error_msg:
-            friendly_error = "Request was blocked by YouTube. Try again in a few moments."
-        else:
-            friendly_error = f"Error extracting transcript: {str(e)}"
+            # Don't retry on permanent errors
+            if "disabled" in error_msg:
+                return {
+                    "text": "", "video_id": video_id, "segments": [],
+                    "success": False,
+                    "error": "Transcripts are disabled for this video.",
+                }
+            if "unavailable" in error_msg or "not exist" in error_msg:
+                return {
+                    "text": "", "video_id": video_id, "segments": [],
+                    "success": False,
+                    "error": "This video is unavailable or does not exist.",
+                }
+            if "no transcript" in error_msg:
+                return {
+                    "text": "", "video_id": video_id, "segments": [],
+                    "success": False,
+                    "error": "No transcript found for this video. It may not have captions.",
+                }
 
-        return {
-            "text": "",
-            "video_id": video_id,
-            "segments": [],
-            "success": False,
-            "error": friendly_error,
-        }
+            # Retry on transient errors (blocked, rate-limited, etc.)
+            if attempt < max_retries - 1:
+                wait_time = 2 ** (attempt + 1)  # 2s, 4s, 8s
+                logger.warning(
+                    "Transcript fetch attempt %d/%d failed: %s. Retrying in %ds...",
+                    attempt + 1, max_retries, e, wait_time,
+                )
+                time.sleep(wait_time)
+            else:
+                logger.error("All %d transcript fetch attempts failed: %s", max_retries, e)
+
+    # All retries exhausted
+    error_msg = str(last_exception).lower() if last_exception else ""
+    if "blocked" in error_msg:
+        friendly_error = (
+            "YouTube is blocking requests from this server. "
+            "This is common on cloud-hosted apps. Please try again in a minute."
+        )
+    else:
+        friendly_error = f"Error extracting transcript after {max_retries} attempts: {last_exception}"
+
+    return {
+        "text": "",
+        "video_id": video_id,
+        "segments": [],
+        "success": False,
+        "error": friendly_error,
+    }
 
 
 # ─── Text Chunking ─────────────────────────────────────────────────────────────
