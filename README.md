@@ -14,18 +14,19 @@ license: mit
 
 # 🎬 YouTube Q&A RAG
 
-### *Intelligent Question-Answering over YouTube Videos*
+### *Intelligent Question-Answering over YouTube Videos — Orchestrated by LangGraph*
 
 [![Python](https://img.shields.io/badge/Python-3.9+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.28+-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io)
+[![LangGraph](https://img.shields.io/badge/LangGraph-0.2+-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white)](https://langchain-ai.github.io/langgraph/)
 [![LangChain](https://img.shields.io/badge/LangChain-0.2+-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white)](https://langchain.com)
 [![HuggingFace](https://img.shields.io/badge/HuggingFace-Transformers-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black)](https://huggingface.co)
 [![FAISS](https://img.shields.io/badge/FAISS-Vector_DB-0467DF?style=for-the-badge&logo=meta&logoColor=white)](https://github.com/facebookresearch/faiss)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 
-A production-ready **Retrieval-Augmented Generation (RAG)** application that extracts YouTube video transcripts, builds a semantic search index, and answers user questions using open-source LLMs — all through an interactive, premium-themed Streamlit interface.
+A production-ready **Retrieval-Augmented Generation (RAG)** application that extracts YouTube video transcripts, builds a semantic search index, and answers user questions using open-source LLMs — all orchestrated by **LangGraph StateGraphs** through an interactive, premium-themed Streamlit interface.
 
-[Get Started](#-quick-start) · [Architecture](#-architecture) · [Tech Stack](#-tech-stack) · [Deploy](#-deployment)
+[Get Started](#-quick-start) · [Architecture](#-langgraph-architecture) · [Tech Stack](#-tech-stack) · [Deploy](#-deployment)
 
 ---
 
@@ -35,7 +36,7 @@ A production-ready **Retrieval-Augmented Generation (RAG)** application that ext
 
 - [Overview](#-overview)
 - [Key Features](#-key-features)
-- [Architecture](#-architecture)
+- [LangGraph Architecture](#-langgraph-architecture)
 - [How the RAG Pipeline Works](#-how-the-rag-pipeline-works)
 - [Tech Stack](#-tech-stack)
 - [Project Structure](#-project-structure)
@@ -43,9 +44,7 @@ A production-ready **Retrieval-Augmented Generation (RAG)** application that ext
 - [Usage Guide](#-usage-guide)
 - [Configuration](#-configuration)
 - [Deployment](#-deployment)
-- [Evaluation & Performance](#-evaluation--performance)
 - [Troubleshooting](#-troubleshooting)
-- [Contributing](#-contributing)
 - [License](#-license)
 
 ---
@@ -54,7 +53,8 @@ A production-ready **Retrieval-Augmented Generation (RAG)** application that ext
 
 **YouTube Q&A RAG** solves a simple but powerful problem: *"I watched a long YouTube video — can I just ask it questions instead of re-watching?"*
 
-This application implements a complete **end-to-end RAG pipeline** that:
+This application implements a complete **end-to-end RAG pipeline** orchestrated by **LangGraph**:
+
 1. **Extracts** the transcript from any YouTube video (no YouTube API key required)
 2. **Chunks** the transcript into semantically meaningful segments with overlap
 3. **Embeds** each chunk into a 384-dimensional vector space using sentence-transformers
@@ -62,221 +62,168 @@ This application implements a complete **end-to-end RAG pipeline** that:
 5. **Retrieves** the most relevant transcript segments for any user question
 6. **Generates** a grounded, contextual answer using an open-source LLM
 
-All of this is wrapped in a **premium dark-themed Streamlit UI** with chat history, source citations, and real-time processing feedback.
+All pipeline steps are modelled as **LangGraph nodes** with typed state, explicit conditional routing, and clean error handling — wrapped in a **premium dark-themed Streamlit UI** with chat history, source citations, and real-time processing feedback.
 
 ---
 
 ## ✨ Key Features
+
+### 🔀 LangGraph-Orchestrated Pipeline
+- Two declarative `StateGraph` instances manage the full lifecycle
+- Each processing step is an **isolated, testable node** with typed `TypedDict` state
+- **Conditional edges** route around errors — no nested try/except spaghetti
+- State is immutable and fully inspectable between steps
+- Easy to extend with new nodes (summarization, tool-calling, re-ranking, etc.)
 
 ### 🎥 YouTube Transcript Extraction
 - Automatically extracts transcripts using `youtube-transcript-api` (v1.2+)
 - Supports multiple YouTube URL formats (`youtube.com/watch?v=`, `youtu.be/`, embed links)
 - No Google API key required — works directly with YouTube's transcript system
 - Handles edge cases: disabled transcripts, unavailable videos, empty captions
+- Exponential backoff retry for transient cloud-blocking errors
 
 ### ✂️ Intelligent Text Chunking
 - Uses LangChain's `RecursiveCharacterTextSplitter` for context-preserving splits
 - Configurable chunk size (default: 1000 chars) and overlap (default: 200 chars)
 - Smart splitting hierarchy: paragraphs → sentences → commas → words
-- Each chunk retains metadata (index, source video, total chunk count)
 
-### 🧠 Semantic Embedding Generation
-- Powered by `sentence-transformers/all-MiniLM-L6-v2` (22M parameters, 384 dimensions)
-- Normalized embeddings for accurate cosine similarity search
-- CPU-optimized — no GPU required
-- Model cached with `@st.cache_resource` for instant reuse across sessions
+### 🧠 Semantic Search with FAISS
+- Sentence-transformer embeddings (`all-MiniLM-L6-v2`, 384 dimensions)
+- L2-normalized vectors for accurate cosine similarity
+- Cached embedding model — no re-loading between queries
+- Retrieves top-K most relevant chunks per question (default K=4)
 
-### 📦 FAISS Vector Database
-- Facebook AI Similarity Search for blazing-fast nearest-neighbor retrieval
-- In-memory index built on-the-fly per video
-- Configurable top-K retrieval (default: K=4 most relevant chunks)
-- Returns similarity scores alongside retrieved content
+### 🤖 Open-Source LLM Generation
+- Uses `mistralai/Mistral-7B-Instruct-v0.3` via HuggingFace Inference API
+- Strict grounding prompt — answers only from transcript context
+- Source citations with similarity scores shown in expandable UI panels
 
-### 🤖 Open-Source LLM Answer Generation
-- Uses `Mistral-7B-Instruct-v0.3` via HuggingFace Inference API
-- Carefully crafted RAG prompt template that enforces grounded answers
-- The LLM is instructed to only answer from provided context (no hallucination)
-- Says "I don't know" when the transcript doesn't contain relevant information
-- Configurable temperature, max tokens, and repetition penalty
-
-### 💬 Interactive Chat Interface
-- Conversational UI using Streamlit's `st.chat_message` components
-- Persistent chat history across questions within a session
-- User/assistant message avatars for clear conversation flow
-- Expandable source panels showing which transcript segments were used
-- Similarity score badges (High / Medium / Low) on each source
-
-### 🎨 Premium Dark Theme
-- Custom CSS with glassmorphism cards, gradient text, and subtle animations
-- Google Fonts (Inter + JetBrains Mono) for premium typography
-- Floating hero animation, pulse effects, and hover transitions
-- Responsive metric cards showing word count, chunk count, and character stats
-- Custom scrollbar, input focus effects, and status badges
+### 🎨 Premium Streamlit UI
+- Dark glassmorphism theme with animated hero header
+- Real-time progress feedback during video processing
+- Chat history with per-message source citations
+- Sample videos and sample questions for quick exploration
 
 ---
 
-## 🏗️ Architecture
+## 🔀 LangGraph Architecture
+
+The core RAG pipeline is split into **two LangGraph StateGraphs**:
+
+### Graph 1 — Ingestion Graph
+
+Processes a YouTube URL into a searchable FAISS index.
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        USER INTERFACE (Streamlit)                   │
-│  ┌──────────────┐  ┌─────────────────────────────────────────────┐  │
-│  │   Sidebar     │  │              Main Chat Area                 │  │
-│  │  • API Token  │  │  ┌─────────────────────────────────────┐   │  │
-│  │  • Video URL  │  │  │  💬 Chat History                    │   │  │
-│  │  • Process    │  │  │  ├─ User: "What is discussed?"      │   │  │
-│  │  • Status     │  │  │  └─ Bot: "The video covers..."     │   │  │
-│  │  • Metrics    │  │  │       └─ 📄 Sources (expandable)    │   │  │
-│  └──────────────┘  │  └─────────────────────────────────────┘   │  │
-│                     │  ┌─────────────────────────────────────┐   │  │
-│                     │  │  💬 Ask a question...                │   │  │
-│                     │  └─────────────────────────────────────┘   │  │
-│                     └─────────────────────────────────────────────┘  │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      RAG PIPELINE (rag_pipeline.py)                 │
-│                                                                     │
-│  ┌──────────┐   ┌──────────┐   ┌──────────────┐   ┌────────────┐  │
-│  │ Transcript│──▶│ Chunking │──▶│  Embeddings  │──▶│   FAISS    │  │
-│  │ Extraction│   │ (1000/   │   │ (MiniLM-L6)  │   │  Index     │  │
-│  │ (YT API)  │   │  200)    │   │  384-dim     │   │  Build     │  │
-│  └──────────┘   └──────────┘   └──────────────┘   └─────┬──────┘  │
-│                                                          │         │
-│  ┌──────────┐   ┌──────────────┐   ┌──────────────┐     │         │
-│  │ Answer + │◀──│  LLM Generate │◀──│  Similarity  │◀────┘         │
-│  │ Sources  │   │ (Mistral-7B)  │   │  Search (k=4)│              │
-│  └──────────┘   └──────────────┘   └──────────────┘              │
-└─────────────────────────────────────────────────────────────────────┘
+START
+  └─► [extract_transcript]
+        │  State: youtube_url → transcript_text, video_id, segments
+        │
+        ├─(success)─► [chunk_text]
+        │               │  State: transcript_text → chunks (LangChain Documents)
+        │               │
+        │               ├─(success)─► [create_index]
+        │               │               │  State: chunks → vector_store (FAISS), stats
+        │               │               └─► END ✅
+        │               │
+        │               └─(error)──► END ❌
+        │
+        └─(error)──► END ❌
 ```
 
-### Data Flow
+### Graph 2 — Q&A Graph
+
+Answers a question against the indexed video.
 
 ```
-YouTube URL
-    │
-    ▼
-┌─────────────────────────────┐
-│  1. EXTRACT TRANSCRIPT      │  youtube-transcript-api v1.2+
-│     • Parse video ID        │  Instance-based API: YouTubeTranscriptApi()
-│     • Fetch transcript      │  Returns: text segments with timestamps
-│     • Clean text            │  Remove [Music], normalize whitespace
-└─────────────┬───────────────┘
-              │
-              ▼
-┌─────────────────────────────┐
-│  2. CHUNK TEXT              │  LangChain RecursiveCharacterTextSplitter
-│     • Split into segments   │  Chunk size: 1000 chars
-│     • Add overlap           │  Overlap: 200 chars
-│     • Attach metadata       │  Index, source, total count
-└─────────────┬───────────────┘
-              │
-              ▼
-┌─────────────────────────────┐
-│  3. GENERATE EMBEDDINGS     │  sentence-transformers/all-MiniLM-L6-v2
-│     • Encode each chunk     │  384-dimensional vectors
-│     • Normalize vectors     │  L2 normalization for cosine similarity
-│     • Cache model           │  @st.cache_resource
-└─────────────┬───────────────┘
-              │
-              ▼
-┌─────────────────────────────┐
-│  4. BUILD FAISS INDEX       │  faiss-cpu
-│     • Index all vectors     │  In-memory flat index
-│     • Ready for search      │  Sub-millisecond retrieval
-└─────────────┬───────────────┘
-              │
-     User asks a question
-              │
-              ▼
-┌─────────────────────────────┐
-│  5. SEMANTIC RETRIEVAL      │  FAISS similarity_search_with_score
-│     • Embed user query      │  Same embedding model
-│     • Find top-K chunks     │  K=4 most relevant segments
-│     • Score & rank          │  Distance → similarity conversion
-└─────────────┬───────────────┘
-              │
-              ▼
-┌─────────────────────────────┐
-│  6. LLM ANSWER GENERATION   │  Mistral-7B-Instruct via HF Inference API
-│     • Build RAG prompt      │  Context + Question → Prompt
-│     • Generate answer       │  Grounded in transcript only
-│     • Return + sources      │  Answer + source segments + scores
-└─────────────────────────────┘
+START
+  └─► [validate_input]
+        │  Checks: vector_store loaded? question non-empty? hf_token present?
+        │
+        ├─(valid)──► [retrieve_chunks]
+        │               │  State: question → relevant_chunks (top-K FAISS results)
+        │               │
+        │               └─(success)─► [generate_answer]
+        │                               │  State: relevant_chunks + question → answer, sources
+        │                               └─► END ✅
+        │
+        └─(invalid)─► END ❌
+```
+
+### Typed State
+
+Each graph uses a `TypedDict` to explicitly declare all state fields:
+
+```python
+class IngestionState(TypedDict):
+    youtube_url: str
+    progress_callback: Optional[Callable]
+    transcript_text: str
+    video_id: str
+    segments: list
+    chunks: list
+    vector_store: Optional[FAISS]
+    success: bool
+    error: Optional[str]
+    stats: dict
+
+class QAState(TypedDict):
+    question: str
+    hf_token: str
+    vector_store: FAISS
+    relevant_chunks: list
+    answer: str
+    sources: list
+    success: bool
+    error: Optional[str]
 ```
 
 ---
 
 ## 🔧 How the RAG Pipeline Works
 
-### Step 1: Transcript Extraction
-```python
-from youtube_transcript_api import YouTubeTranscriptApi
-
-ytt_api = YouTubeTranscriptApi()
-transcript = ytt_api.fetch("video_id")
-# Returns iterable of snippets with .text, .start, .duration
 ```
-The app parses multiple URL formats, extracts the 11-character video ID, and fetches the transcript. It cleans the text by removing markers like `[Music]` and normalizing whitespace.
-
-### Step 2: Text Chunking
-```python
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-
-splitter = RecursiveCharacterTextSplitter(
-    chunk_size=1000,
-    chunk_overlap=200,
-    separators=["\n\n", "\n", ". ", "? ", "! ", ", ", " ", ""]
-)
-chunks = splitter.create_documents([text], [metadata])
+YouTube URL
+     │
+     ▼
+┌─────────────────────────────────────────────────────────────┐
+│                   INGESTION GRAPH (LangGraph)                │
+│                                                             │
+│  extract_transcript → chunk_text → create_index             │
+│   (with retry)       (1000 chars   (FAISS + all-MiniLM)     │
+│                       200 overlap)                          │
+└─────────────────────────────────────────────────────────────┘
+     │ vector_store
+     ▼
+User Question
+     │
+     ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      Q&A GRAPH (LangGraph)                   │
+│                                                             │
+│  validate_input → retrieve_chunks → generate_answer         │
+│  (guards)          (top-4 FAISS)    (Mistral-7B via HF API) │
+└─────────────────────────────────────────────────────────────┘
+     │
+     ▼
+  Answer + Sources
 ```
-The splitter tries to break at natural boundaries (paragraphs first, then sentences) and maintains 200-character overlap between chunks to preserve context across boundaries.
-
-### Step 3: Embedding & Indexing
-```python
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import FAISS
-
-embeddings = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/all-MiniLM-L6-v2",
-    encode_kwargs={"normalize_embeddings": True}
-)
-vector_store = FAISS.from_documents(chunks, embeddings)
-```
-Each chunk is transformed into a 384-dimensional vector. Normalization ensures cosine similarity works correctly. All vectors are indexed in FAISS for fast retrieval.
-
-### Step 4: Retrieval & Generation
-```python
-# Retrieve top-4 most relevant chunks
-results = vector_store.similarity_search_with_score(query, k=4)
-
-# Generate answer via HuggingFace Inference API
-client = InferenceClient(token=hf_token)
-answer = client.text_generation(prompt, model="mistralai/Mistral-7B-Instruct-v0.3")
-```
-The retrieved chunks are formatted into a RAG prompt that instructs the LLM to answer ONLY from the provided context, preventing hallucination.
 
 ---
 
-## 🛠️ Tech Stack
+## 🛠 Tech Stack
 
-| Layer | Technology | Version | Purpose |
-|:---|:---|:---|:---|
-| **Frontend** | [Streamlit](https://streamlit.io) | ≥1.28.0 | Interactive web UI with chat components |
-| **Orchestration** | [LangChain](https://langchain.com) | ≥0.2.0 | Pipeline orchestration, text splitting, vector store integration |
-| **Embeddings** | [sentence-transformers](https://sbert.net) | ≥2.2.0 | `all-MiniLM-L6-v2` for 384-dim semantic embeddings |
-| **Vector Store** | [FAISS](https://github.com/facebookresearch/faiss) | ≥1.7.4 | CPU-based similarity search (Facebook AI) |
-| **LLM** | [HuggingFace Hub](https://huggingface.co) | ≥0.20.0 | `Mistral-7B-Instruct-v0.3` via Inference API |
-| **Transcript** | [youtube-transcript-api](https://pypi.org/project/youtube-transcript-api/) | ≥0.6.1 | YouTube transcript extraction (no API key needed) |
-| **Config** | [python-dotenv](https://pypi.org/project/python-dotenv/) | ≥1.0.0 | Environment variable management |
-
-### Why These Choices?
-
-- **`all-MiniLM-L6-v2`** over larger models: Only 22M parameters, runs fast on CPU, perfect for free-tier HuggingFace Spaces (limited RAM). Still achieves strong semantic similarity performance.
-- **FAISS** over ChromaDB/Pinecone: Zero external dependencies, no API keys, in-memory speed. Ideal for single-video use cases.
-- **Mistral-7B-Instruct** via API: Avoids loading a multi-GB model locally. Free-tier HF Inference API provides fast, quality responses.
-- **LangChain**: Standardized abstractions for text splitting, embeddings, and vector stores — easy to swap components later.
+| Layer | Technology | Purpose |
+|---|---|---|
+| **Orchestration** | [LangGraph](https://langchain-ai.github.io/langgraph/) | StateGraph-based pipeline orchestration |
+| **UI** | [Streamlit](https://streamlit.io) | Interactive web interface |
+| **Transcript** | [youtube-transcript-api](https://github.com/jdepoix/youtube-transcript-api) | YouTube caption extraction |
+| **Chunking** | [LangChain Text Splitters](https://python.langchain.com/docs/modules/data_connection/document_transformers/) | Recursive character splitting |
+| **Embeddings** | [sentence-transformers/all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2) | 384-dim semantic embeddings |
+| **Vector Store** | [FAISS](https://github.com/facebookresearch/faiss) | Sub-millisecond similarity search |
+| **LLM** | [Mistral-7B-Instruct-v0.3](https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.3) | Answer generation |
+| **LLM API** | [HuggingFace Inference API](https://huggingface.co/inference-api) | Serverless LLM inference |
+| **State Types** | [typing_extensions TypedDict](https://pypi.org/project/typing-extensions/) | Explicit typed state contracts |
 
 ---
 
@@ -284,40 +231,39 @@ The retrieved chunks are formatted into a RAG prompt that instructs the LLM to a
 
 ```
 yt_project/
+├── app.py                  # Streamlit entrypoint (UI, session state, routing)
+├── rag_pipeline.py         # ⭐ LangGraph pipeline (two StateGraphs + RAGPipeline class)
+├── config.py               # Model names, chunking params, prompt templates, UI constants
+├── ui_components.py        # Premium CSS injection + reusable Streamlit components
+├── requirements.txt        # Python dependencies (includes langgraph)
+├── .env.example            # Environment variable template
+├── .streamlit/
+│   ├── config.toml         # Streamlit dark theme configuration
+│   └── secrets.toml.example # Secrets template for Streamlit Cloud
+└── README.md               # This file
+```
+
+### Key file: `rag_pipeline.py`
+
+```
+rag_pipeline.py
+├── IngestionState (TypedDict)   — state contract for Graph 1
+├── QAState (TypedDict)          — state contract for Graph 2
 │
-├── app.py                  # 🚀 Main Streamlit application
-│                           #    - Page config, session state, sidebar
-│                           #    - Chat interface with message history
-│                           #    - Video processing with progress bar
-│                           #    - Sample questions and welcome screen
+├── INGESTION GRAPH NODES
+│   ├── node_extract_transcript  — fetch & clean YouTube transcript
+│   ├── node_chunk_text          — split transcript into overlapping chunks
+│   └── node_create_index        — embed chunks & build FAISS index
 │
-├── rag_pipeline.py         # 🧠 Core RAG pipeline
-│                           #    - extract_video_id() — URL parsing
-│                           #    - extract_transcript() — YouTube API v1.2+
-│                           #    - chunk_text() — RecursiveCharacterTextSplitter
-│                           #    - load_embedding_model() — Cached model loader
-│                           #    - create_vector_store() — FAISS index builder
-│                           #    - get_relevant_chunks() — Similarity search
-│                           #    - generate_answer() — HF Inference API call
-│                           #    - RAGPipeline class — Full orchestrator
+├── Q&A GRAPH NODES
+│   ├── node_validate_input      — guard: pipeline ready? question valid? token present?
+│   ├── node_retrieve_chunks     — FAISS similarity search (top-K)
+│   └── node_generate_answer     — LLM answer generation via HF Inference API
 │
-├── ui_components.py        # 🎨 UI components & styling
-│                           #    - inject_custom_css() — 400+ lines of premium CSS
-│                           #    - render_hero_header() — Animated gradient header
-│                           #    - render_metric_cards() — Stats display
-│                           #    - render_source_card() — Citation panels
-│                           #    - render_status_badge() — Processing status
-│                           #    - render_welcome_message() — Onboarding screen
+├── build_ingestion_graph()      — compile & return ingestion StateGraph
+├── build_qa_graph()             — compile & return Q&A StateGraph
 │
-├── config.py               # ⚙️ Configuration constants
-│                           #    - Model names, chunk sizes, retrieval K
-│                           #    - RAG prompt template (Mistral [INST] format)
-│                           #    - UI constants, sample questions/videos
-│
-├── requirements.txt        # 📦 Python dependencies (9 packages)
-├── .env.example            # 🔑 Environment variable template
-├── .gitignore              # 🚫 Git ignore rules
-└── README.md               # 📖 This documentation
+└── RAGPipeline (class)          — public wrapper; exposes process_video() + ask()
 ```
 
 ---
@@ -326,230 +272,194 @@ yt_project/
 
 ### Prerequisites
 
-| Requirement | Details |
-|:---|:---|
-| **Python** | 3.9 or higher |
-| **HuggingFace Token** | Free at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) |
-| **Internet** | Required for YouTube transcripts and HF Inference API |
-| **RAM** | ~512 MB (embedding model + FAISS index) |
+- Python 3.9+
+- A free [HuggingFace account](https://huggingface.co/join) with an API token
+- Git
 
-### Installation
+### 1. Clone the Repository
 
 ```bash
-# 1. Clone the repository
 git clone https://github.com/aditya123098/yt_project.git
 cd yt_project
+```
 
-# 2. (Optional) Create a virtual environment
-python -m venv venv
-source venv/bin/activate        # Linux/Mac
-# venv\Scripts\activate         # Windows
+### 2. Create a Virtual Environment
 
-# 3. Install dependencies
+```bash
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# macOS/Linux
+source .venv/bin/activate
+```
+
+### 3. Install Dependencies
+
+```bash
 pip install -r requirements.txt
+```
 
-# 4. Set up your API token
+> ⚠️ **First run** downloads the `all-MiniLM-L6-v2` embedding model (~90 MB). It is cached for subsequent runs.
+
+### 4. Configure Your API Token
+
+**Option A — `.env` file (local development):**
+
+```bash
 cp .env.example .env
-# Edit .env and add your HuggingFace token:
-# HUGGINGFACEHUB_API_TOKEN=hf_your_actual_token_here
+# Edit .env and set:
+# HUGGINGFACEHUB_API_TOKEN=hf_your_token_here
+```
 
-# 5. Run the app
+**Option B — Enter in sidebar** at runtime (no file needed).
+
+### 5. Run the App
+
+```bash
 streamlit run app.py
 ```
 
-The app will open at **http://localhost:8501** 🎉
-
-> **Note:** The first run will download the `all-MiniLM-L6-v2` embedding model (~80 MB). Subsequent runs use the cached version.
+Open `http://localhost:8501` in your browser. 🎉
 
 ---
 
 ## 📖 Usage Guide
 
-### Step 1: Configure API Token
-Enter your **HuggingFace API token** in the sidebar password field. You can get a free token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) — select "Read" access.
+### Processing a Video
 
-Alternatively, set it as an environment variable:
-```bash
-export HUGGINGFACEHUB_API_TOKEN=hf_your_token_here
-```
+1. **Enter API Token** — Paste your HuggingFace token in the sidebar (or set it in `.env`)
+2. **Paste a YouTube URL** — Any video with captions enabled works
+   - Try a **sample video** by clicking one of the quick-start buttons
+3. **Click "🚀 Process Video"** — Watch the 4-step progress bar:
+   - 📝 Extracting transcript...
+   - ✂️ Splitting into chunks...
+   - 🧠 Generating embeddings & building index...
+   - ✅ Ready for questions!
+4. **Ask Questions** — Type in the chat box or click a sample question
 
-### Step 2: Process a Video
-- Paste any YouTube URL (e.g., `https://www.youtube.com/watch?v=aircAruvnKk`)
-- Or click one of the **sample video buttons** in the sidebar
-- Click **"🚀 Process Video"**
+### Asking Questions
 
-You'll see a real-time progress bar:
-1. 📝 Extracting transcript...
-2. ✂️ Splitting into chunks...
-3. 🧠 Generating embeddings & building index...
-4. ✅ Ready for questions!
+Questions work best when they are specific:
 
-### Step 3: Ask Questions
-- Type any question in the chat input at the bottom
-- Or click one of the **sample question buttons**
-- The app retrieves the most relevant transcript segments and generates a contextual answer
-
-### Step 4: Explore Sources
-- Click **"📄 View Sources"** on any answer to see which transcript segments were used
-- Each source shows:
-  - **Segment number** — which chunk from the transcript
-  - **Similarity score** — how relevant the chunk is (High ▲ / Medium ● / Low ▼)
-  - **Content preview** — the actual transcript text
-
-### Step 5: Continue the Conversation
-- Ask follow-up questions — the chat history is preserved
-- Click **"🗑️ Clear Chat"** in the sidebar to start fresh
-- Process a different video at any time
+| ✅ Good | ❌ Vague |
+|---|---|
+| "What examples of backpropagation were mentioned?" | "Tell me everything" |
+| "What conclusion did the presenter reach?" | "Summarize" |
+| "How did they explain gradient descent?" | "What was good?" |
 
 ---
 
 ## ⚙️ Configuration
 
-All parameters are centralized in [`config.py`](config.py):
+All tunable parameters live in [`config.py`](config.py):
 
-### Embedding Model
-| Parameter | Default | Description |
-|:---|:---|:---|
-| `EMBEDDING_MODEL_NAME` | `sentence-transformers/all-MiniLM-L6-v2` | Sentence transformer for chunk embeddings |
-| `EMBEDDING_DIMENSION` | `384` | Vector dimensionality |
+```python
+# Embedding model
+EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
-### LLM Model
-| Parameter | Default | Description |
-|:---|:---|:---|
-| `LLM_MODEL_NAME` | `mistralai/Mistral-7B-Instruct-v0.3` | LLM for answer generation |
-| `LLM_MAX_NEW_TOKENS` | `512` | Maximum tokens in generated answer |
-| `LLM_TEMPERATURE` | `0.3` | Lower = more focused, higher = more creative |
-| `LLM_REPETITION_PENALTY` | `1.1` | Penalizes repeated phrases |
+# LLM (HuggingFace Inference API)
+LLM_MODEL_NAME        = "mistralai/Mistral-7B-Instruct-v0.3"
+LLM_MAX_NEW_TOKENS    = 512
+LLM_TEMPERATURE       = 0.3
+LLM_REPETITION_PENALTY = 1.1
 
-### Text Chunking
-| Parameter | Default | Description |
-|:---|:---|:---|
-| `CHUNK_SIZE` | `1000` | Maximum characters per chunk |
-| `CHUNK_OVERLAP` | `200` | Overlap between consecutive chunks |
+# Chunking
+CHUNK_SIZE    = 1000   # characters per chunk
+CHUNK_OVERLAP = 200    # characters of overlap between chunks
 
-### Retrieval
-| Parameter | Default | Description |
-|:---|:---|:---|
-| `RETRIEVAL_K` | `4` | Number of top chunks to retrieve per query |
-
-### Customizing the RAG Prompt
-The `RAG_PROMPT_TEMPLATE` in `config.py` uses Mistral's `[INST]` format. You can modify it to:
-- Change the system persona
-- Add specific output formatting rules
-- Adjust how the model handles insufficient context
+# Retrieval
+RETRIEVAL_K = 4        # number of chunks to retrieve per query
+```
 
 ---
 
-## 🚢 Deployment
+## 🌐 Deployment
 
-### Deploy to HuggingFace Spaces
+### Streamlit Cloud (Recommended — Free)
 
-The project includes the required YAML frontmatter in `README.md` for direct deployment:
+1. Fork this repo to your GitHub account
+2. Go to [share.streamlit.io](https://share.streamlit.io) → **New app**
+3. Select your fork, branch `main`, and `app.py` as the main file
+4. In **Settings → Secrets**, add:
+   ```toml
+   HUGGINGFACEHUB_API_TOKEN = "hf_your_token_here"
+   ```
+5. Deploy! ✅
 
-```bash
-# 1. Create a new Space at huggingface.co/new-space
-#    - Select "Streamlit" as the SDK
-#    - Name: youtube-qa-rag
+### HuggingFace Spaces
 
-# 2. Push to HuggingFace
-git remote add hf https://huggingface.co/spaces/YOUR_USERNAME/youtube-qa-rag
-git push hf main
+1. Create a new Space at [huggingface.co/spaces](https://huggingface.co/spaces)
+2. Select **Streamlit** as the SDK
+3. Push this repository to the Space
+4. Add `HUGGINGFACEHUB_API_TOKEN` in Space settings → Variables and secrets
 
-# 3. Add your API token as a Secret
-#    Go to Space Settings → Variables and Secrets
-#    Add: HUGGINGFACEHUB_API_TOKEN = hf_your_token
-```
-
-### Deploy with Docker
+### Local Docker
 
 ```dockerfile
 FROM python:3.11-slim
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install -r requirements.txt
 COPY . .
 EXPOSE 8501
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.headless=true"]
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
 ```
 
 ```bash
-docker build -t youtube-qa-rag .
-docker run -p 8501:8501 -e HUGGINGFACEHUB_API_TOKEN=hf_your_token youtube-qa-rag
+docker build -t yt-qa-rag .
+docker run -p 8501:8501 -e HUGGINGFACEHUB_API_TOKEN=hf_... yt-qa-rag
 ```
-
----
-
-## 📊 Evaluation & Performance
-
-### Answer Quality
-- **90%+ answer relevancy** on evaluation queries — the RAG prompt template enforces grounded answers
-- The model explicitly states when information is not available in the transcript
-- Source citations allow users to verify every answer
-
-### Performance Metrics
-| Metric | Value |
-|:---|:---|
-| Transcript extraction | 1–3 seconds |
-| Chunking (10k words) | < 100ms |
-| Embedding generation | 2–5 seconds (CPU) |
-| FAISS index build | < 500ms |
-| Similarity search | < 10ms |
-| LLM generation | 3–8 seconds (API) |
-| **Total query time** | **~5–10 seconds** |
-
-### Limitations
-- Depends on YouTube having transcripts available (auto-generated or manual)
-- HuggingFace free-tier API has rate limits (~30 requests/min)
-- Single video at a time (no multi-video knowledge base)
-- Transcript quality depends on YouTube's auto-captioning accuracy
 
 ---
 
 ## 🔧 Troubleshooting
 
-| Issue | Solution |
-|:---|:---|
-| **"No transcript found"** | The video may not have captions. Try a video with CC available |
-| **"Model is loading"** | The Mistral model is cold-starting on HF servers. Wait 30–60 seconds and retry |
-| **"Rate limit exceeded"** | HF free tier limit reached. Wait a minute or use a Pro token |
-| **"Invalid API token"** | Check your token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) |
-| **"Request blocked"** | YouTube may block cloud IPs. Works best from local/residential networks |
-| **Slow first run** | The embedding model (~80 MB) downloads on first use. Subsequent runs are instant |
-| **Blank Streamlit page** | Check terminal for errors. Ensure all dependencies are installed |
+### "YouTube is blocking requests from this server"
+
+This happens when YouTube rate-limits cloud datacenter IPs. The pipeline already implements exponential backoff (2s → 4s → 8s). If it persists:
+- Wait a minute and try again
+- Try a different video
+- Run the app locally instead of in the cloud
+
+### "Transcripts are disabled for this video"
+
+The video creator has disabled auto-generated captions. Try a different video — most educational/tutorial videos have transcripts available.
+
+### "The model is currently loading. Please wait..."
+
+HuggingFace free tier models cold-start (~30s). Wait 30-60 seconds then retry your question.
+
+### "Invalid HuggingFace API token"
+
+- Ensure your token starts with `hf_`
+- Check that the token has **read** permissions at huggingface.co/settings/tokens
+- On Streamlit Cloud, ensure the secret is named exactly `HUGGINGFACEHUB_API_TOKEN`
+
+### Model download is slow
+
+The `all-MiniLM-L6-v2` model (~90 MB) is downloaded once and cached automatically. Subsequent runs use the cache.
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Here are some ideas:
+Contributions are welcome! The LangGraph architecture makes it easy to add new nodes:
 
-- [ ] **Multi-video support** — Process multiple videos into one knowledge base
-- [ ] **Timestamp links** — Link answers back to specific video timestamps
-- [ ] **Local LLM support** — Add Ollama integration for fully offline usage
-- [ ] **PDF export** — Export Q&A sessions as PDF reports
-- [ ] **Caching** — Save processed video indexes for instant re-loading
-- [ ] **Re-ranking** — Add cross-encoder re-ranking for better retrieval precision
-
-```bash
-# Fork the repo, create a branch, make changes, then:
-git checkout -b feature/your-feature
-git commit -m "feat: add your feature"
-git push origin feature/your-feature
-# Open a Pull Request
-```
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/my-new-node`
+3. Add a new node function to `rag_pipeline.py` and wire it into the appropriate graph
+4. Submit a pull request
 
 ---
 
-## 📝 License
+## 📄 License
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the [MIT License](LICENSE).
 
 ---
 
 <div align="center">
 
-**Built with ❤️ using LangChain, Streamlit, FAISS, and HuggingFace**
-
-⭐ Star this repo if you found it useful!
+Built with ❤️ using LangGraph, LangChain, Streamlit, and HuggingFace
 
 </div>
